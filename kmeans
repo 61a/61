@@ -1,0 +1,37 @@
+import torch
+import torchvision
+import numpy as np
+from sklearn.cluster import KMeans
+
+# 加载预训练的 ResNet-18 模型
+model = torchvision.models.resnet18(pretrained=True)
+
+# 设置模型为评估模式
+model.eval()
+
+def kmeans_quantize_layer(layer, n_clusters):
+    # 将权重转换为 NumPy 数组
+    weight_np = layer.weight.data.cpu().numpy()
+    
+    # 将权重展平
+    original_shape = weight_np.shape
+    flattened_weight = weight_np.flatten()
+    
+    # 对展平的权重应用 K-means
+    kmeans = KMeans(n_clusters=n_clusters)
+    kmeans.fit(flattened_weight.reshape(-1, 1))
+    
+    # 使用聚类中心量化权重
+    quantized_weight = kmeans.cluster_centers_[kmeans.labels_].reshape(original_shape)
+    
+    # 将量化后的权重转换回 PyTorch Tensor 并赋值给层
+    layer.weight.data = torch.from_numpy(quantized_weight).to(layer.weight.device)
+
+# 遍历模型的每一层，对 Conv2d 层进行 K-means 量化
+n_clusters = 16  # 可以根据需要调整簇的数量
+for layer in model.modules():
+    if isinstance(layer, torch.nn.Conv2d):
+        kmeans_quantize_layer(layer, n_clusters)
+
+# 保存量化后的模型
+torch.save(model.state_dict(), 'kmeans_quantized_resnet18.pth')
